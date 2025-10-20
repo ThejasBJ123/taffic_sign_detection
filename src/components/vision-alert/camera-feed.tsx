@@ -25,7 +25,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [isClient, setIsClient] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +34,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const { toast } = useToast();
+  const [isClient, setIsClient] = useState(false);
 
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
@@ -101,18 +101,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const handleSpokenDetections = useCallback((detections: Detection[]) => {
     if (!isTtsEnabled) return;
 
-    const priority = ["RED_LIGHT", "STOP", "YIELD", "SPEED_LIMIT", "GREEN_LIGHT", "YELLOW_LIGHT"];
-    
-    const sortedDetections = [...detections].sort((a, b) => {
-      const priorityA = priority.indexOf(a.class);
-      const priorityB = priority.indexOf(b.class);
-      if (priorityA === -1 && priorityB === -1) return 0;
-      if (priorityA === -1) return 1;
-      if (priorityB === -1) return -1;
-      return priorityA - priorityB;
-    });
-
-    const detectionTexts = sortedDetections.map(d => d.class.replace(/_/g, " "));
+    const detectionTexts = detections.map(d => d.class.replace(/_/g, " "));
 
     // Add new detections to the queue if not already present
     detectionTexts.forEach(text => {
