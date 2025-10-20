@@ -4,7 +4,7 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Camera, CameraOff, Loader2, Maximize } from "lucide-react";
 import { detectTrafficSignals, type DetectTrafficSignalsOutput } from "@/ai/flows/detect-traffic-signals";
-import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis";
+import { textToSpeech } from "@/ai/flows/text-to-speech";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card } from "../ui/card";
@@ -31,12 +31,30 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const [isLoading, setIsLoading] = useState(true);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recentDetectionsRef = useRef<Map<string, number>>(new Map());
-  const { speak, isSpeaking } = useSpeechSynthesis();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     setIsClient(true);
+    audioRef.current = new Audio();
+    audioRef.current.onended = () => setIsSpeaking(false);
   }, []);
+
+  const speak = useCallback(async (text: string) => {
+    if (isSpeaking || !audioRef.current) return;
+    setIsSpeaking(true);
+    try {
+      const response = await textToSpeech(text);
+      if (response.media) {
+        audioRef.current.src = response.media;
+        audioRef.current.play();
+      }
+    } catch (e) {
+      console.error("Speech synthesis failed:", e);
+      setIsSpeaking(false);
+    }
+  }, [isSpeaking]);
   
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
