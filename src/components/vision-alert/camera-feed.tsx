@@ -16,7 +16,7 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 100; // 10 FPS
+const DETECTION_INTERVAL = 2000;
 const ANNOUNCEMENT_PERSISTENCE = 3; // Announce after 3 consecutive frames
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
@@ -29,6 +29,27 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recentDetectionsRef = useRef<Map<string, number>>(new Map());
   const { speak, isSpeaking } = useSpeechSynthesis();
+
+  const stopCamera = useCallback(() => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    
+    const canvas = canvasRef.current;
+    if(canvas){
+        const ctx = canvas.getContext('2d');
+        ctx?.clearRect(0,0, canvas.width, canvas.height);
+    }
+
+    setIsCameraOn(false);
+    onDetectionsChange([]);
+  }, [onDetectionsChange]);
 
   const handleSpokenDetections = useCallback((detections: Detection[]) => {
       if (!isTtsEnabled || isSpeaking) return;
@@ -134,7 +155,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
       setError("AI detection service is currently unavailable.");
       stopCamera();
     }
-  }, [confidence, onDetectionsChange, drawDetections, handleSpokenDetections]);
+  }, [confidence, onDetectionsChange, drawDetections, handleSpokenDetections, stopCamera]);
 
   const startCamera = useCallback(async () => {
     setError(null);
@@ -171,27 +192,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
       setIsCameraOn(false);
     }
   }, [runDetection]);
-
-  const stopCamera = useCallback(() => {
-    if (detectionIntervalRef.current) {
-      clearInterval(detectionIntervalRef.current);
-      detectionIntervalRef.current = null;
-    }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    
-    const canvas = canvasRef.current;
-    if(canvas){
-        const ctx = canvas.getContext('2d');
-        ctx?.clearRect(0,0, canvas.width, canvas.height);
-    }
-
-    setIsCameraOn(false);
-    onDetectionsChange([]);
-  }, [onDetectionsChange]);
 
   useEffect(() => {
     startCamera();
