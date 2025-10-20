@@ -18,14 +18,13 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 7000;
+const DETECTION_INTERVAL = 2000;
 const ANNOUNCEMENT_PERSISTENCE = 1; // Announce immediately
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [hasCameraPermission, setHasCameraPermission] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,7 +56,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     setIsCameraOn(false);
     onDetectionsChange([]);
   }, [onDetectionsChange]);
-
+  
   const drawDetections = useCallback((detections: Detection[]) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -180,7 +179,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError("Camera access is not supported by your browser.");
         setIsLoading(false);
-        setHasCameraPermission(false);
         return;
     }
 
@@ -195,7 +193,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
             videoRef.current?.play();
             setIsCameraOn(true);
             setIsLoading(false);
-            setHasCameraPermission(true);
             detectionIntervalRef.current = setInterval(() => {
               runDetection();
               processAudioQueue();
@@ -204,7 +201,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
       }
     } catch (err) {
       console.error("Camera access denied:", err);
-      setHasCameraPermission(false);
       if (err instanceof DOMException) {
           if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
               setError("Camera permission was denied. Please allow camera access in your browser settings.");
@@ -235,6 +231,9 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
 
   useEffect(() => {
     if (isClient) {
+      if(isCameraOn) {
+        stopCamera();
+      }
       startCamera();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -266,7 +265,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   }
 
   const handleRotateCamera = () => {
-    stopCamera();
     setFacingMode(prev => (prev === 'user' ? 'environment' : 'user'));
   };
 

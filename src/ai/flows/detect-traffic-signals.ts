@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -24,7 +25,7 @@ export type DetectTrafficSignalsInput = z.infer<typeof DetectTrafficSignalsInput
 const DetectTrafficSignalsOutputSchema = z.object({
   detections: z.array(
     z.object({
-      class: z.string().describe('The class of the detected object (e.g., STOP, RED_LIGHT).'),
+      class: z.string().describe('The class of the detected object (e.g., STOP, RED_LIGHT, YIELD, GREEN_LIGHT).'),
       confidence: z.number().describe('The confidence score of the detection.'),
       bbox: z.array(z.number()).length(4).describe('The bounding box of the detected object [x, y, width, height].'),
     })
@@ -40,11 +41,11 @@ const detectTrafficSignalsPrompt = ai.definePrompt({
   name: 'detectTrafficSignalsPrompt',
   input: {schema: DetectTrafficSignalsInputSchema},
   output: {schema: DetectTrafficSignalsOutputSchema},
-  prompt: `You are an AI agent specializing in detecting traffic signals, signs, and lights from a live video stream.
+  prompt: `You are an AI agent specializing in detecting all types of traffic signals, signs, and lights from a live video stream.
 
 You will receive a frame from the video stream as a data URI and a confidence threshold.
 
-Your task is to identify and locate traffic signals, signs, and lights within the frame. Only return detections with confidence scores above the given threshold.
+Your task is to identify and locate any traffic-related signals within the frame. This includes, but is not limited to, stop signs, traffic lights (red, yellow, green), yield signs, speed limit signs, pedestrian crossing signs, etc. Only return detections with confidence scores above the given threshold.
 
 Return the detections as a JSON array, including the class, confidence, and bounding box for each detected object.
 
@@ -60,8 +61,18 @@ Example output:
   },
   {
     "class": "RED_LIGHT",
-    "confidence": 0.80,
-    "bbox": [300, 400, 30, 30]
+    "confidence": 0.98,
+    "bbox": [300, 150, 40, 80]
+  },
+  {
+    "class": "YIELD",
+    "confidence": 0.85,
+    "bbox": [50, 300, 60, 60]
+  },
+  {
+    "class": "GREEN_LIGHT",
+    "confidence": 0.99,
+    "bbox": [300, 150, 40, 80]
   }
 ]`,
 });
