@@ -8,6 +8,7 @@ import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card } from "../ui/card";
+import { useToast } from "@/hooks/use-toast";
 
 type Detection = DetectTrafficSignalsOutput["detections"][0];
 
@@ -17,7 +18,7 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 5000;
+const DETECTION_INTERVAL = 10000;
 const ANNOUNCEMENT_PERSISTENCE = 3; // Announce after 3 consecutive frames
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
@@ -31,11 +32,12 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recentDetectionsRef = useRef<Map<string, number>>(new Map());
   const { speak, isSpeaking } = useSpeechSynthesis();
+  const { toast } = useToast();
 
   useEffect(() => {
     setIsClient(true);
   }, []);
-
+  
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
@@ -169,6 +171,11 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
     }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setError("Camera access is not supported by your browser.");
+        setIsLoading(false);
+        return;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -206,7 +213,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     return () => {
       stopCamera();
     };
-  }, [isClient, startCamera, stopCamera]);
+  }, [isClient, stopCamera, startCamera]);
 
   const toggleFullScreen = () => {
     if (videoRef.current && document.fullscreenEnabled) {
@@ -273,5 +280,3 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     </Card>
   );
 }
-
-    
