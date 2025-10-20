@@ -27,7 +27,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioQueueRef = useRef<string[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -217,17 +217,24 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   
   useEffect(() => {
     setIsClient(true);
-    audioRef.current = new Audio();
-    const handleAudioEnd = () => {
-        setIsSpeaking(false);
-    };
-    audioRef.current.addEventListener('ended', handleAudioEnd);
-    
     return () => {
-        audioRef.current?.removeEventListener('ended', handleAudioEnd);
-        stopCamera();
+      stopCamera();
     }
   }, [stopCamera]);
+
+  useEffect(() => {
+    if(isClient){
+      audioRef.current = new Audio();
+      const handleAudioEnd = () => {
+          setIsSpeaking(false);
+      };
+      audioRef.current.addEventListener('ended', handleAudioEnd);
+      
+      return () => {
+          audioRef.current?.removeEventListener('ended', handleAudioEnd);
+      }
+    }
+  }, [isClient]);
 
   useEffect(() => {
     if (isClient) {
