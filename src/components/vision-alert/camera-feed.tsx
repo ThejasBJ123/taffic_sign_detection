@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
@@ -16,19 +17,24 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 2000;
+const DETECTION_INTERVAL = 5000;
 const ANNOUNCEMENT_PERSISTENCE = 3; // Announce after 3 consecutive frames
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [isClient, setIsClient] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const recentDetectionsRef = useRef<Map<string, number>>(new Map());
   const { speak, isSpeaking } = useSpeechSynthesis();
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
@@ -194,11 +200,13 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   }, [runDetection]);
 
   useEffect(() => {
-    startCamera();
+    if (isClient) {
+      startCamera();
+    }
     return () => {
       stopCamera();
     };
-  }, [startCamera, stopCamera]);
+  }, [isClient, startCamera, stopCamera]);
 
   const toggleFullScreen = () => {
     if (videoRef.current && document.fullscreenEnabled) {
@@ -208,6 +216,16 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
             videoRef.current.parentElement?.requestFullscreen();
         }
     }
+  }
+  
+  if (!isClient) {
+    return (
+        <Card className="flex-1 w-full h-full p-4 overflow-hidden flex flex-col items-center justify-center relative shadow-lg">
+            <div className="relative w-full aspect-video bg-muted rounded-lg overflow-hidden flex items-center justify-center">
+                <Loader2 className="w-12 h-12 animate-spin text-primary" />
+            </div>
+        </Card>
+    );
   }
 
   return (
@@ -255,3 +273,5 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     </Card>
   );
 }
+
+    
