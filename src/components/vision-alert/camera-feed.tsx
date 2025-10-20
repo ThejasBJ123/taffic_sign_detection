@@ -18,7 +18,7 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 4000;
+const DETECTION_INTERVAL = 6000;
 const ANNOUNCEMENT_PERSISTENCE = 1; // Announce immediately
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
