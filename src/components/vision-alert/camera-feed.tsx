@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Camera, CameraOff, Loader2, Maximize } from "lucide-react";
+import { Camera, CameraOff, Loader2, Maximize, Volume2, VolumeX } from "lucide-react";
 import { detectTrafficSignals, type DetectTrafficSignalsOutput } from "@/ai/flows/detect-traffic-signals";
 import { textToSpeech } from "@/ai/flows/text-to-speech";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ interface CameraFeedProps {
 }
 
 const DETECTION_INTERVAL = 10000;
-const ANNOUNCEMENT_PERSISTENCE = 2; // Announce after 2 consecutive frames
+const ANNOUNCEMENT_PERSISTENCE = 1; // Announce immediately
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,33 +30,51 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const recentDetectionsRef = useRef<Map<string, number>>(new Map());
+  const audioQueueRef = useRef<string[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const lastAnnouncedSignal = useRef<string | null>(null);
   const { toast } = useToast();
+  
+  const processAudioQueue = useCallback(async () => {
+    if (isSpeaking || audioQueueRef.current.length === 0 || !audioRef.current || !isTtsEnabled) return;
+    
+    setIsSpeaking(true);
+    const text = audioQueueRef.current.shift();
+
+    if (text) {
+      try {
+        const response = await textToSpeech(text);
+        if (response.media) {
+          audioRef.current.src = response.media;
+          audioRef.current.play();
+        }
+      } catch (e) {
+        console.error("Speech synthesis failed:", e);
+        setIsSpeaking(false);
+      }
+    } else {
+        setIsSpeaking(false);
+    }
+  }, [isSpeaking, isTtsEnabled]);
 
   useEffect(() => {
     setIsClient(true);
     audioRef.current = new Audio();
-    audioRef.current.onended = () => setIsSpeaking(false);
+    const handleAudioEnd = () => {
+        setIsSpeaking(false);
+    };
+    audioRef.current.addEventListener('ended', handleAudioEnd);
+    
+    return () => {
+        audioRef.current?.removeEventListener('ended', handleAudioEnd);
+    }
   }, []);
 
-  const speak = useCallback(async (text: string) => {
-    if (isSpeaking || !audioRef.current) return;
-    setIsSpeaking(true);
-    try {
-      const response = await textToSpeech(text);
-      if (response.media) {
-        audioRef.current.src = response.media;
-        audioRef.current.play();
-        lastAnnouncedSignal.current = text.replace(/ /g, "_").toUpperCase();
-      }
-    } catch (e) {
-      console.error("Speech synthesis failed:", e);
-      setIsSpeaking(false);
+  useEffect(() => {
+    if (!isSpeaking) {
+        processAudioQueue();
     }
-  }, [isSpeaking]);
+  }, [isSpeaking, processAudioQueue]);
   
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
@@ -78,49 +96,33 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     setIsCameraOn(false);
     onDetectionsChange([]);
   }, [onDetectionsChange]);
-
+  
   const handleSpokenDetections = useCallback((detections: Detection[]) => {
-      if (!isTtsEnabled || isSpeaking) return;
-
+      if (!isTtsEnabled) return;
+  
       const priority = ["RED_LIGHT", "STOP", "YIELD", "SPEED_LIMIT", "GREEN_LIGHT", "YELLOW_LIGHT"];
-      const detectedClasses = new Set(detections.map(d => d.class));
-      const newCounters = new Map<string, number>();
-
-      let highestPrioritySignal: string | null = null;
-      let highestPriorityIndex = Infinity;
       
-      // Reset signals that are no longer detected
-      recentDetectionsRef.current.forEach((_, key) => {
-        if (!detectedClasses.has(key)) {
-          recentDetectionsRef.current.delete(key);
-          if (lastAnnouncedSignal.current === key) {
-            lastAnnouncedSignal.current = null;
-          }
+      const sortedDetections = [...detections].sort((a, b) => {
+        const priorityA = priority.indexOf(a.class);
+        const priorityB = priority.indexOf(b.class);
+        if (priorityA === -1 && priorityB === -1) return 0;
+        if (priorityA === -1) return 1;
+        if (priorityB === -1) return -1;
+        return priorityA - priorityB;
+      });
+
+      const detectionTexts = sortedDetections.map(d => d.class.replace(/_/g, " "));
+
+      // Add new detections to the queue if not already present
+      detectionTexts.forEach(text => {
+        if (!audioQueueRef.current.includes(text)) {
+            audioQueueRef.current.push(text);
         }
       });
 
-      detectedClasses.forEach(cls => {
-          const currentCount = (recentDetectionsRef.current.get(cls) || 0) + 1;
-          newCounters.set(cls, currentCount);
+      processAudioQueue();
 
-          if (currentCount >= ANNOUNCEMENT_PERSISTENCE) {
-              const priorityIndex = priority.indexOf(cls);
-              if (priorityIndex !== -1 && priorityIndex < highestPriorityIndex) {
-                  highestPriorityIndex = priorityIndex;
-                  highestPrioritySignal = cls;
-              }
-          }
-      });
-      
-      recentDetectionsRef.current = newCounters;
-
-      if (highestPrioritySignal && highestPrioritySignal !== lastAnnouncedSignal.current) {
-          const textToSpeak = highestPrioritySignal.replace(/_/g, " ");
-          speak(textToSpeak);
-          // Reset counter after announcement to avoid immediate re-announcement
-          recentDetectionsRef.current.set(highestPrioritySignal, 0); 
-      }
-  }, [isTtsEnabled, isSpeaking, speak]);
+  }, [isTtsEnabled, processAudioQueue]);
 
 
   const drawDetections = useCallback((detections: Detection[]) => {
@@ -242,18 +244,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     }
   }, [runDetection]);
 
-  useEffect(() => {
-    // This effect now only runs once on mount to start the camera initially.
-    if (isClient) {
-      startCamera();
-    }
-    // The cleanup function will be called when the component unmounts.
-    return () => {
-      stopCamera();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClient]); // Intentionally not including startCamera/stopCamera to avoid re-running
-
   const toggleFullScreen = () => {
     const parentElement = videoRef.current?.parentElement;
     if (parentElement && document.fullscreenEnabled) {
@@ -272,6 +262,37 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
         startCamera();
     }
   }
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    if (isCameraOn) {
+      if (!detectionIntervalRef.current) {
+        detectionIntervalRef.current = setInterval(runDetection, DETECTION_INTERVAL);
+      }
+    } else {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
+      }
+    }
+
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
+    };
+  }, [isCameraOn, runDetection, isClient]);
+
+  useEffect(() => {
+    if (isClient) {
+      startCamera();
+    }
+
+    return () => {
+      stopCamera();
+    };
+  }, [isClient, startCamera, stopCamera]);
   
   if (!isClient) {
     return (
@@ -324,7 +345,22 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
                 <span className="sr-only">{isCameraOn ? 'Stop Camera' : 'Start Camera'}</span>
             </Button>
         </div>
+        <div className="absolute bottom-2 left-2">
+          {isTtsEnabled ? (
+            <div className="flex items-center gap-2 bg-background/50 text-foreground py-1 px-3 rounded-full text-sm">
+              <Volume2 className="w-5 h-5 text-green-500" />
+              <span>Announcements ON</span>
+            </div>
+           ) : (
+            <div className="flex items-center gap-2 bg-background/50 text-muted-foreground py-1 px-3 rounded-full text-sm">
+              <VolumeX className="w-5 h-5" />
+              <span>Announcements OFF</span>
+            </div>
+           )}
+        </div>
       </div>
     </Card>
   );
 }
+
+    
