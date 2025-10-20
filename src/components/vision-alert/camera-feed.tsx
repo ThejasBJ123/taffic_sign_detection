@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Camera, CameraOff, Loader2, Maximize, Volume2, VolumeX } from "lucide-react";
+import { Camera, CameraOff, Loader2, Maximize, RotateCw, Volume2, VolumeX } from "lucide-react";
 import { detectTrafficSignals, type DetectTrafficSignalsOutput } from "@/ai/flows/detect-traffic-signals";
 import { textToSpeech } from "@/ai/flows/text-to-speech";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const [isSpeaking, setIsSpeaking] = useState(false);
   const { toast } = useToast();
   const [isClient, setIsClient] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
 
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
@@ -185,7 +186,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: { facingMode },
         audio: false,
       });
       if (videoRef.current) {
@@ -216,7 +217,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
       setIsLoading(false);
       setIsCameraOn(false);
     }
-  }, [runDetection, processAudioQueue]);
+  }, [runDetection, processAudioQueue, facingMode]);
   
   useEffect(() => {
     setIsClient(true);
@@ -236,7 +237,8 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     if (isClient) {
       startCamera();
     }
-  }, [isClient, startCamera]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, facingMode]);
 
   useEffect(() => {
     if (!isSpeaking) {
@@ -262,6 +264,11 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
         startCamera();
     }
   }
+
+  const handleRotateCamera = () => {
+    stopCamera();
+    setFacingMode(prev => (prev === 'user' ? 'environment' : 'user'));
+  };
 
   if (!isClient) {
     return (
@@ -305,6 +312,10 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
         <canvas ref={hiddenCanvasRef} className="hidden" />
         
         <div className="absolute top-2 right-2 flex items-center gap-2">
+            <Button size="icon" variant="ghost" className="bg-background/50 hover:bg-background/80" onClick={handleRotateCamera}>
+                <RotateCw className="w-5 h-5"/>
+                <span className="sr-only">Rotate Camera</span>
+            </Button>
             <Button size="icon" variant="ghost" className="bg-background/50 hover:bg-background/80" onClick={toggleFullScreen}>
                 <Maximize className="w-5 h-5"/>
                 <span className="sr-only">Toggle Fullscreen</span>
