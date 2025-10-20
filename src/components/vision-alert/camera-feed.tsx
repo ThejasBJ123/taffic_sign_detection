@@ -18,7 +18,7 @@ interface CameraFeedProps {
   onDetectionsChange: (detections: Detection[]) => void;
 }
 
-const DETECTION_INTERVAL = 10000;
+const DETECTION_INTERVAL = 3000;
 const ANNOUNCEMENT_PERSISTENCE = 1; // Announce immediately
 
 export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChange }: CameraFeedProps) {
@@ -26,6 +26,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isClient, setIsClient] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState(true);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,48 +35,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const { toast } = useToast();
-  
-  const processAudioQueue = useCallback(async () => {
-    if (isSpeaking || audioQueueRef.current.length === 0 || !audioRef.current || !isTtsEnabled) return;
-    
-    setIsSpeaking(true);
-    const text = audioQueueRef.current.shift();
 
-    if (text) {
-      try {
-        const response = await textToSpeech(text);
-        if (response.media) {
-          audioRef.current.src = response.media;
-          audioRef.current.play();
-        }
-      } catch (e) {
-        console.error("Speech synthesis failed:", e);
-        setIsSpeaking(false);
-      }
-    } else {
-        setIsSpeaking(false);
-    }
-  }, [isSpeaking, isTtsEnabled]);
-
-  useEffect(() => {
-    setIsClient(true);
-    audioRef.current = new Audio();
-    const handleAudioEnd = () => {
-        setIsSpeaking(false);
-    };
-    audioRef.current.addEventListener('ended', handleAudioEnd);
-    
-    return () => {
-        audioRef.current?.removeEventListener('ended', handleAudioEnd);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isSpeaking) {
-        processAudioQueue();
-    }
-  }, [isSpeaking, processAudioQueue]);
-  
   const stopCamera = useCallback(() => {
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
@@ -96,34 +56,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     setIsCameraOn(false);
     onDetectionsChange([]);
   }, [onDetectionsChange]);
-  
-  const handleSpokenDetections = useCallback((detections: Detection[]) => {
-      if (!isTtsEnabled) return;
-  
-      const priority = ["RED_LIGHT", "STOP", "YIELD", "SPEED_LIMIT", "GREEN_LIGHT", "YELLOW_LIGHT"];
-      
-      const sortedDetections = [...detections].sort((a, b) => {
-        const priorityA = priority.indexOf(a.class);
-        const priorityB = priority.indexOf(b.class);
-        if (priorityA === -1 && priorityB === -1) return 0;
-        if (priorityA === -1) return 1;
-        if (priorityB === -1) return -1;
-        return priorityA - priorityB;
-      });
-
-      const detectionTexts = sortedDetections.map(d => d.class.replace(/_/g, " "));
-
-      // Add new detections to the queue if not already present
-      detectionTexts.forEach(text => {
-        if (!audioQueueRef.current.includes(text)) {
-            audioQueueRef.current.push(text);
-        }
-      });
-
-      processAudioQueue();
-
-  }, [isTtsEnabled, processAudioQueue]);
-
 
   const drawDetections = useCallback((detections: Detection[]) => {
     const video = videoRef.current;
@@ -166,6 +98,53 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     });
   }, []);
 
+  const handleSpokenDetections = useCallback((detections: Detection[]) => {
+    if (!isTtsEnabled) return;
+
+    const priority = ["RED_LIGHT", "STOP", "YIELD", "SPEED_LIMIT", "GREEN_LIGHT", "YELLOW_LIGHT"];
+    
+    const sortedDetections = [...detections].sort((a, b) => {
+      const priorityA = priority.indexOf(a.class);
+      const priorityB = priority.indexOf(b.class);
+      if (priorityA === -1 && priorityB === -1) return 0;
+      if (priorityA === -1) return 1;
+      if (priorityB === -1) return -1;
+      return priorityA - priorityB;
+    });
+
+    const detectionTexts = sortedDetections.map(d => d.class.replace(/_/g, " "));
+
+    // Add new detections to the queue if not already present
+    detectionTexts.forEach(text => {
+      if (!audioQueueRef.current.includes(text)) {
+          audioQueueRef.current.push(text);
+      }
+    });
+
+  }, [isTtsEnabled]);
+
+  const processAudioQueue = useCallback(async () => {
+    if (isSpeaking || audioQueueRef.current.length === 0 || !audioRef.current || !isTtsEnabled) return;
+    
+    setIsSpeaking(true);
+    const text = audioQueueRef.current.shift();
+
+    if (text) {
+      try {
+        const response = await textToSpeech(text);
+        if (response.media) {
+          audioRef.current.src = response.media;
+          audioRef.current.play();
+        }
+      } catch (e) {
+        console.error("Speech synthesis failed:", e);
+        setIsSpeaking(false);
+      }
+    } else {
+        setIsSpeaking(false);
+    }
+  }, [isSpeaking, isTtsEnabled]);
+  
   const runDetection = useCallback(async () => {
     const video = videoRef.current;
     const hiddenCanvas = hiddenCanvasRef.current;
@@ -211,6 +190,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError("Camera access is not supported by your browser.");
         setIsLoading(false);
+        setHasCameraPermission(false);
         return;
     }
 
@@ -225,11 +205,16 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
             videoRef.current?.play();
             setIsCameraOn(true);
             setIsLoading(false);
-            detectionIntervalRef.current = setInterval(runDetection, DETECTION_INTERVAL);
+            setHasCameraPermission(true);
+            detectionIntervalRef.current = setInterval(() => {
+              runDetection();
+              processAudioQueue();
+            }, DETECTION_INTERVAL);
         }
       }
     } catch (err) {
       console.error("Camera access denied:", err);
+      setHasCameraPermission(false);
       if (err instanceof DOMException) {
           if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
               setError("Camera permission was denied. Please allow camera access in your browser settings.");
@@ -242,8 +227,34 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
       setIsLoading(false);
       setIsCameraOn(false);
     }
-  }, [runDetection]);
+  }, [runDetection, processAudioQueue]);
+  
+  useEffect(() => {
+    setIsClient(true);
+    audioRef.current = new Audio();
+    const handleAudioEnd = () => {
+        setIsSpeaking(false);
+    };
+    audioRef.current.addEventListener('ended', handleAudioEnd);
+    
+    return () => {
+        audioRef.current?.removeEventListener('ended', handleAudioEnd);
+        stopCamera();
+    }
+  }, [stopCamera]);
 
+  useEffect(() => {
+    if (isClient) {
+      startCamera();
+    }
+  }, [isClient, startCamera]);
+
+  useEffect(() => {
+    if (!isSpeaking) {
+        processAudioQueue();
+    }
+  }, [isSpeaking, processAudioQueue]);
+  
   const toggleFullScreen = () => {
     const parentElement = videoRef.current?.parentElement;
     if (parentElement && document.fullscreenEnabled) {
@@ -263,37 +274,6 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     }
   }
 
-  useEffect(() => {
-    if (!isClient) return;
-
-    if (isCameraOn) {
-      if (!detectionIntervalRef.current) {
-        detectionIntervalRef.current = setInterval(runDetection, DETECTION_INTERVAL);
-      }
-    } else {
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-        detectionIntervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (detectionIntervalRef.current) {
-        clearInterval(detectionIntervalRef.current);
-      }
-    };
-  }, [isCameraOn, runDetection, isClient]);
-
-  useEffect(() => {
-    if (isClient) {
-      startCamera();
-    }
-
-    return () => {
-      stopCamera();
-    };
-  }, [isClient, startCamera, stopCamera]);
-  
   if (!isClient) {
     return (
         <Card className="flex-1 w-full h-full p-4 overflow-hidden flex flex-col items-center justify-center relative shadow-lg">
@@ -362,5 +342,3 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     </Card>
   );
 }
-
-    
