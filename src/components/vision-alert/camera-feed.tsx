@@ -174,7 +174,7 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
     setError(null);
     setIsLoading(true);
     if (detectionIntervalRef.current) {
-      clearInterval(detectionIntervalRef.current);
+        clearInterval(detectionIntervalRef.current);
     }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setError("Camera access is not supported by your browser.");
@@ -182,37 +182,51 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
         return;
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const startStream = async (constraints: MediaStreamConstraints) => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.onloadedmetadata = () => {
+                    videoRef.current?.play();
+                    setIsCameraOn(true);
+                    setIsLoading(false);
+                    detectionIntervalRef.current = setInterval(() => {
+                        runDetection();
+                        processAudioQueue();
+                    }, DETECTION_INTERVAL);
+                };
+            }
+        } catch (err) {
+            console.error("Camera access error:", err);
+            // If the specific facingMode fails, try with any camera.
+            if (err instanceof DOMException && err.name === "NotFoundError" && constraints.video && typeof constraints.video === 'object' && (constraints.video as MediaTrackConstraints).facingMode) {
+                console.log("Facing mode camera not found, trying with any camera.");
+                const fallbackConstraints: MediaStreamConstraints = { video: true, audio: false };
+                startStream(fallbackConstraints);
+            } else {
+                if (err instanceof DOMException) {
+                    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                        setError("Camera permission was denied. Please allow camera access in your browser settings.");
+                    } else if (err.name === "NotFoundError") {
+                        setError("No camera was found on your device.");
+                    } else {
+                        setError("Could not access camera. Is it being used by another application?");
+                    }
+                } else {
+                    setError("An unknown error occurred while accessing the camera.");
+                }
+                setIsLoading(false);
+                setIsCameraOn(false);
+            }
+        }
+    };
+
+    const initialConstraints: MediaStreamConstraints = {
         video: { facingMode },
         audio: false,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play();
-            setIsCameraOn(true);
-            setIsLoading(false);
-            detectionIntervalRef.current = setInterval(() => {
-              runDetection();
-              processAudioQueue();
-            }, DETECTION_INTERVAL);
-        }
-      }
-    } catch (err) {
-      console.error("Camera access denied:", err);
-      if (err instanceof DOMException) {
-          if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-              setError("Camera permission was denied. Please allow camera access in your browser settings.");
-          } else {
-              setError("Could not access camera. Is it being used by another application?");
-          }
-      } else {
-          setError("An unknown error occurred while accessing the camera.");
-      }
-      setIsLoading(false);
-      setIsCameraOn(false);
-    }
+    };
+    startStream(initialConstraints);
   }, [runDetection, processAudioQueue, facingMode]);
   
   useEffect(() => {
@@ -237,14 +251,13 @@ export default function CameraFeed({ confidence, isTtsEnabled, onDetectionsChang
   }, [isClient]);
 
   useEffect(() => {
-    if (isClient) {
-      if(isCameraOn) {
+    if (isClient && isCameraOn) {
         stopCamera();
-      }
-      startCamera();
+        startCamera();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, facingMode]);
+
 
   useEffect(() => {
     if (!isSpeaking) {
